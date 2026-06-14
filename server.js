@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const { chat, extractPdfCategory, cleanReply } = require("./classifier");
-const { getHistory, addMessage } = require("./conversation");
+const { getHistory, addMessage, getDelay } = require("./conversation");
 const { getPdfUrl } = require("./drive");
 const { sendDocument, sendText } = require("./whatsapp");
 
@@ -47,8 +47,9 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`[${from}] ${text}`);
 
-    // Random delay between 45-90 seconds to feel human
-    const delay = Math.floor(Math.random() * 45000) + 45000;
+    // Human-like delay pattern: 60s, 15s, 30s, 10s, repeating
+    const delay = getDelay(from);
+    console.log(`Waiting ${delay/1000}s before replying to ${from}`);
     await new Promise(resolve => setTimeout(resolve, delay));
 
     // Get conversation history and generate reply
