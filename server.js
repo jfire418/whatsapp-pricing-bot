@@ -64,5 +64,14 @@ app.post("/webhook", async (req, res) => {
 
 app.get("/", (req, res) => res.send("WhatsApp bot is running."));
 
+app.get("/debug", (req, res) => {
+  res.json({
+    verify_token_set: !!process.env.WHATSAPP_VERIFY_TOKEN,
+    verify_token_length: (process.env.WHATSAPP_VERIFY_TOKEN || "").length,
+    anthropic_set: !!process.env.ANTHROPIC_API_KEY,
+    phone_id_set: !!process.env.WHATSAPP_PHONE_NUMBER_ID,
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
