@@ -7,6 +7,14 @@ const { sendDocument, sendText } = require("./whatsapp");
 const app = express();
 app.use(express.json());
 
+const recentLogs = [];
+const origLog = console.log.bind(console);
+const origErr = console.error.bind(console);
+console.log = (...args) => { recentLogs.push(args.join(" ")); if (recentLogs.length > 50) recentLogs.shift(); origLog(...args); };
+console.error = (...args) => { recentLogs.push("ERROR: " + args.join(" ")); if (recentLogs.length > 50) recentLogs.shift(); origErr(...args); };
+
+app.get("/logs", (req, res) => res.json(recentLogs));
+
 // Webhook verification — Meta calls this once when you register the webhook
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -60,6 +68,9 @@ app.post("/webhook", async (req, res) => {
     console.log(`Replied to ${from} with ${category} pricing`);
   } catch (err) {
     console.error("Error handling message:", err.message);
+    if (err.response) {
+      console.error("API error details:", JSON.stringify(err.response.data));
+    }
   }
 });
 
