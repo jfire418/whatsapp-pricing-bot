@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
-const { classifyMessage, generateReply } = require("./classifier");
+const { chat, extractPdfCategory, cleanReply } = require("./classifier");
+const { getHistory, addMessage } = require("./conversation");
 const { getPdfUrl } = require("./drive");
 const { sendDocument, sendText } = require("./whatsapp");
 
@@ -15,13 +16,13 @@ console.error = (...args) => { recentLogs.push("ERROR: " + args.join(" ")); if (
 
 app.get("/logs", (req, res) => res.json(recentLogs));
 
-// Webhook verification — Meta calls this once when you register the webhook
+// Webhook verification
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "pricingbot2024";
+
   if (mode === "subscribe" && token === verifyToken) {
     console.log("Webhook verified");
     res.status(200).send(challenge);
@@ -32,7 +33,6 @@ app.get("/webhook", (req, res) => {
 
 // Incoming WhatsApp messages
 app.post("/webhook", async (req, res) => {
-  // Acknowledge immediately — Meta requires a 200 within 5 seconds
   res.sendStatus(200);
 
   try {
@@ -47,31 +47,31 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`[${from}] ${text}`);
 
-    // 1. Classify
-    const category = await classifyMessage(text);
-    console.log(`Category: ${category}`);
+    // Get conversation history and generate reply
+    const history = getHistory(from);
+    const reply = await chat(history, text);
 
-    if (category === "Smalltalk") {
-      // Just reply naturally, no PDF
-      const reply = await generateReply("Smalltalk", text);
-      await sendText(from, reply);
-    } else {
-      // 2. Get PDF URL from Google Drive
-      const pdfUrl = getPdfUrl(category);
+    console.log(`Reply: ${reply}`);
 
-      // 3. Send PDF
-      await sendDocument(
-        from,
-        pdfUrl,
-        "Here is our pricing guide. Let us know your date so we can assist you further."
-      );
+    // Save to conversation history
+    addMessage(from, "user", text);
+    addMessage(from, "assistant", reply);
 
-      // 4. Send warm follow-up message
-      const reply = await generateReply(category, text);
-      await sendText(from, reply);
+    // Check if Claude decided to send a PDF
+    const pdfCategory = extractPdfCategory(reply);
+    const cleanedReply = cleanReply(reply);
+
+    if (pdfCategory) {
+      const pdfUrl = getPdfUrl(pdfCategory);
+      await sendDocument(from, pdfUrl, "Here's our pricing guide 📸");
+      console.log(`Sent ${pdfCategory} PDF to ${from}`);
     }
 
-    console.log(`Replied to ${from} with ${category} pricing`);
+    if (cleanedReply) {
+      await sendText(from, cleanedReply);
+    }
+
+    console.log(`Replied to ${from}`);
   } catch (err) {
     console.error("Error handling message:", err.message);
     if (err.response) {
@@ -79,8 +79,6 @@ app.post("/webhook", async (req, res) => {
     }
   }
 });
-
-app.get("/", (req, res) => res.send("WhatsApp bot is running."));
 
 app.get("/debug", (req, res) => {
   res.json({
@@ -90,6 +88,8 @@ app.get("/debug", (req, res) => {
     phone_id_set: !!process.env.WHATSAPP_PHONE_NUMBER_ID,
   });
 });
+
+app.get("/", (req, res) => res.send("WhatsApp bot is running."));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));

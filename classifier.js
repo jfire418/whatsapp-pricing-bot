@@ -2,81 +2,60 @@ const Anthropic = require("@anthropic-ai/sdk");
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const CATEGORIES = ["Wedding", "Event", "Portrait", "Corporate", "General", "Smalltalk"];
+const SYSTEM_PROMPT = `You are Zara, a friendly human assistant for a photography and film company based in Zambia. You chat with potential clients on WhatsApp.
 
-async function classifyMessage(message) {
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 20,
-    messages: [
-      {
-        role: "user",
-        content: `You are a assistant for a photography and film company.
+Your personality:
+- Warm, natural, conversational — like a real person texting
+- Never robotic or corporate
+- Use casual language, occasional emojis are fine
+- Never reveal you are AI
 
-Classify this WhatsApp message into ONE category only.
+Your job is to understand what the client needs before sending pricing. Follow this flow:
 
-Categories: Wedding, Event, Portrait, Corporate, General, Smalltalk
+1. Greet warmly if they say hi
+2. Ask what kind of shoot or event they have in mind (if they haven't said)
+3. Once you know the shoot type, ask follow-up questions:
+   - Wedding → ask about their wedding date, venue, how many hours coverage they need
+   - Event → ask about the event type, date, and location
+   - Portrait → ask if it's personal or family, and preferred location (studio or outdoor)
+   - Corporate → ask about the type of content needed and their company
+4. If they ask about availability or dates → say "Let me check the calendar on my end, I'll confirm with you shortly 📅"
+5. Once you have enough info (shoot type + some details), send the pricing PDF by including this exact tag in your reply: [SEND_PDF:Category] where Category is one of: Wedding, Event, Portrait, Corporate, General
+   Example: "Here's our pricing for weddings! [SEND_PDF:Wedding]"
+6. After sending pricing, encourage them to book and ask if they have questions
 
-Use "Smalltalk" for greetings, how are you, thanks, ok, bye, and any chat that is NOT about photography services or pricing.
+Rules:
+- Only include [SEND_PDF:Category] ONCE, when you have enough context
+- Never send the PDF just because they said hi
+- Keep replies short — this is WhatsApp, not email
+- If they go off topic, gently steer back`;
 
-Return ONLY the category name, nothing else.
-
-Message: ${message}`,
-      },
-    ],
-  });
-
-  const raw = response.content[0].text.trim();
-  const match = CATEGORIES.find(
-    (c) => c.toLowerCase() === raw.toLowerCase()
-  );
-  return match || "General";
-}
-
-async function generateReply(category, message) {
-  if (category === "Smalltalk") {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 100,
-      messages: [
-        {
-          role: "user",
-          content: `You are a friendly human assistant for a photography business chatting on WhatsApp.
-
-Reply naturally to this message like a real person would — casual, warm, short.
-- Match their energy (if they say "hi" just say "Hey! 😊" or similar)
-- Do NOT mention AI, do NOT be robotic
-- If they ask how you are, respond like a human would
-- Keep it to 1-2 sentences max
-
-Message: ${message}`,
-        },
-      ],
-    });
-    return response.content[0].text.trim();
-  }
+async function chat(history, newMessage) {
+  const messages = [
+    ...history,
+    { role: "user", content: newMessage },
+  ];
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 150,
-    messages: [
-      {
-        role: "user",
-        content: `You are a friendly human assistant for a photography business on WhatsApp.
-
-Write a natural, warm reply. Rules:
-- Sound like a real person texting, not a corporate bot
-- 2-3 sentences max
-- Encourage them to book or ask more questions
-- Do NOT mention AI or that you sent a PDF (they'll see it)
-- No stiff formal language
-
-Category: ${category}`,
-      },
-    ],
+    max_tokens: 300,
+    system: SYSTEM_PROMPT,
+    messages,
   });
 
   return response.content[0].text.trim();
 }
 
-module.exports = { classifyMessage, generateReply };
+// Extract PDF category from reply if present
+function extractPdfCategory(reply) {
+  const match = reply.match(/\[SEND_PDF:(\w+)\]/);
+  if (!match) return null;
+  return match[1];
+}
+
+// Clean the tag from the reply before sending to user
+function cleanReply(reply) {
+  return reply.replace(/\[SEND_PDF:\w+\]/g, "").trim();
+}
+
+module.exports = { chat, extractPdfCategory, cleanReply };
