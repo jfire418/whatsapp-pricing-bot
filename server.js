@@ -51,19 +51,25 @@ app.post("/webhook", async (req, res) => {
     const category = await classifyMessage(text);
     console.log(`Category: ${category}`);
 
-    // 2. Get PDF URL from Google Drive
-    const pdfUrl = getPdfUrl(category);
+    if (category === "Smalltalk") {
+      // Just reply naturally, no PDF
+      const reply = await generateReply("Smalltalk", text);
+      await sendText(from, reply);
+    } else {
+      // 2. Get PDF URL from Google Drive
+      const pdfUrl = getPdfUrl(category);
 
-    // 3. Send PDF
-    await sendDocument(
-      from,
-      pdfUrl,
-      "Here is our pricing guide. Let us know your date so we can assist you further."
-    );
+      // 3. Send PDF
+      await sendDocument(
+        from,
+        pdfUrl,
+        "Here is our pricing guide. Let us know your date so we can assist you further."
+      );
 
-    // 4. Send warm follow-up message
-    const reply = await generateReply(category);
-    await sendText(from, reply);
+      // 4. Send warm follow-up message
+      const reply = await generateReply(category, text);
+      await sendText(from, reply);
+    }
 
     console.log(`Replied to ${from} with ${category} pricing`);
   } catch (err) {
