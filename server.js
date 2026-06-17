@@ -14,16 +14,24 @@ const origErr = console.error.bind(console);
 console.log = (...args) => { recentLogs.push(args.join(" ")); if (recentLogs.length > 50) recentLogs.shift(); origLog(...args); };
 console.error = (...args) => { recentLogs.push("ERROR: " + args.join(" ")); if (recentLogs.length > 50) recentLogs.shift(); origErr(...args); };
 
-app.get("/logs", (req, res) => res.json(recentLogs));
+// Logs are gated behind a secret token (set LOGS_TOKEN in the environment).
+// If LOGS_TOKEN is unset the endpoint is disabled, so it can never expose
+// client conversations publicly by default.
+app.get("/logs", (req, res) => {
+  const secret = process.env.LOGS_TOKEN;
+  if (!secret) return res.status(403).send("Logs disabled");
+  if (req.query.token !== secret) return res.sendStatus(401);
+  res.json(recentLogs);
+});
 
 // Webhook verification
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "pricingbot2024";
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
-  if (mode === "subscribe" && token === verifyToken) {
+  if (mode === "subscribe" && verifyToken && token === verifyToken) {
     console.log("Webhook verified");
     res.status(200).send(challenge);
   } else {
